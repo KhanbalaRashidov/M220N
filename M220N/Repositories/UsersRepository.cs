@@ -48,13 +48,16 @@ namespace M220N.Repositories
         /// <param name="email">The Email of the User</param>
         /// <param name="cancellationToken">Allows the UI to cancel an asynchronous request. Optional.</param>
         /// <returns>A User or null</returns>
+       
         public async Task<User> GetUserAsync(string email, CancellationToken cancellationToken = default)
         {
             // TODO Ticket: User Management
             // Retrieve the user document corresponding with the user's email.
             //
             // // return await _usersCollection.Find(...)
-            return null;
+            var filter = Builders<User>.Filter.Eq(x => x.Email, email);
+           return await _usersCollection.Find(filter).FirstOrDefaultAsync();
+            
         }
 
         /// <summary>
@@ -70,7 +73,13 @@ namespace M220N.Repositories
         {
             try
             {
-                var user = new User();
+                var user = new User
+                {
+                    Email = email,
+                    HashedPassword = PasswordHashOMatic.Hash(password),
+                    Name = name
+                };
+                await _usersCollection.InsertOneAsync(user);
                 // TODO Ticket: User Management
                 // Create a user with the "Name", "Email", and "HashedPassword" fields.
                 // DO NOT STORE CLEAR-TEXT PASSWORDS! Instead, use the helper class
@@ -82,6 +91,9 @@ namespace M220N.Repositories
                 // // TODO Ticket: Durable Writes
                 // // To use a more durable Write Concern for this operation, add the 
                 // // .WithWriteConcern() method to your InsertOneAsync call.
+
+
+
 
                 var newUser = await GetUserAsync(user.Email, cancellationToken);
                 return new UserResponse(newUser);
@@ -132,6 +144,12 @@ namespace M220N.Repositories
                 //  Builders<Session>.Update.Set(...).Set(...),
                 //  new UpdateOptions(...));
 
+                var filter = Builders<Session>.Filter.Eq(t => t.UserId, user.Email);
+
+                await _sessionsCollection.UpdateOneAsync(filter,
+                    Builders<Session>.Update.Set(s => s.UserId, user.Email).Set(s => s.Jwt, user.AuthToken),
+                    new UpdateOptions { IsUpsert = true });
+
                 storedUser.AuthToken = user.AuthToken;
                 return new UserResponse(storedUser);
             }
@@ -167,6 +185,7 @@ namespace M220N.Repositories
         {
             // TODO Ticket: User Management
             // Retrieve the session document corresponding with the user's email.
+            var filter = Builders<Session>.Filter.Eq(t => t.UserId, email);
             return await _sessionsCollection.Find(new BsonDocument()).FirstOrDefaultAsync();
         }
 
@@ -228,6 +247,15 @@ namespace M220N.Repositories
                 //       setting IsUpsert to false! */
                 //    new UpdateOptions(),
                 //    cancellationToken);
+                var filter = Builders<User>.Filter.Eq(u => u.Email, email);
+
+                updateResult = await _usersCollection.UpdateOneAsync(
+                    filter,
+                    Builders<User>.Update.Set(s => s.Preferences, preferences),
+                    /* Be sure to pass a new UpdateOptions object here,
+                       setting IsUpsert to false! */
+                    new UpdateOptions { IsUpsert = false },
+                    cancellationToken);
 
                 return updateResult.MatchedCount == 0
                     ? new UserResponse(false, "No user found with that email")

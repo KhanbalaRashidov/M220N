@@ -33,7 +33,7 @@ namespace M220N.Repositories
         public MoviesRepository(IMongoClient mongoClient)
         {
             _mongoClient = mongoClient;
-            var camelCaseConvention = new ConventionPack {new CamelCaseElementNameConvention()};
+            var camelCaseConvention = new ConventionPack { new CamelCaseElementNameConvention() };
             ConventionRegistry.Register("CamelCase", camelCaseConvention, type => true);
 
             _moviesCollection = mongoClient.GetDatabase("sample_mflix").GetCollection<Movie>("movies");
@@ -59,7 +59,7 @@ namespace M220N.Repositories
             string sort = DefaultSortKey, int sortDirection = DefaultSortOrder,
             CancellationToken cancellationToken = default)
         {
-            var skip =  moviesPerPage * page;
+            var skip = moviesPerPage * page;
             var limit = moviesPerPage;
 
 
@@ -86,6 +86,9 @@ namespace M220N.Repositories
             {
                 return await _moviesCollection.Aggregate()
                     .Match(Builders<Movie>.Filter.Eq(x => x.Id, movieId))
+                    .Match(Builders<Movie>.Filter.Eq(x => x.Id, movieId))
+                        .Lookup<Movie, Comment, Movie>(_commentsCollection,
+                        m => m.Id, c => c.MovieId, r => r.Comments)
                     // Ticket: Get Comments
                     // Add a lookup stage that includes the
                     // comments associated with the retrieved movie
@@ -192,16 +195,16 @@ namespace M220N.Repositories
             string sortKey = DefaultSortKey, int limit = DefaultMoviesPerPage,
             int page = 0, params string[] genres)
         {
-            var returnValue = new List<Movie>();
+            //var returnValue = new List<Movie>();
 
             var sort = new BsonDocument(sortKey, DefaultSortOrder);
 
-            returnValue = await _moviesCollection
-                .Find(Builders<Movie>.Filter.In("genres", genres))
-                .Limit(limit)
-                .Skip(page * limit)
-                .Sort(sort)
-                .ToListAsync(cancellationToken);
+            var returnValue = await _moviesCollection
+                 .Find(Builders<Movie>.Filter.In("genres", genres))
+                 .Limit(limit)
+                 .Skip(page * limit)
+                 .Sort(sort)
+                 .ToListAsync(cancellationToken);
 
             // TODO Ticket: Enable filtering of movies by genre.
             // If you get stuck see the ``GetMoviesByCastAsync`` method above.
@@ -241,7 +244,7 @@ namespace M220N.Repositories
             var matchStage = new BsonDocument("$match",
                 new BsonDocument("cast",
                     new BsonDocument("$in",
-                        new BsonArray {cast})));
+                        new BsonArray { cast })));
 
             //I limit the number of results
             var limitStage = new BsonDocument("$limit", DefaultMoviesPerPage);
@@ -261,6 +264,10 @@ namespace M220N.Repositories
             {
                 matchStage,
                 sortStage,
+                skipStage,
+                limitStage,
+                facetStage,
+                
                 // add the remaining stages in the correct order
 
             };
@@ -273,7 +280,7 @@ namespace M220N.Repositories
             // We build another pipeline here to count the number of
             // movies that match _without_ the limit, skip, and facet stages
             var count = BuildAndRunCountPipeline(matchStage, sortStage);
-            result.Count = (int) count.Values.First();
+            result.Count = (int)count.Values.First();
 
             return result;
         }

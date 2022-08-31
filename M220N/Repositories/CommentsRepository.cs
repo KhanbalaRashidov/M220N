@@ -50,6 +50,7 @@ namespace M220N.Repositories
                 // Ticket: Add a new Comment
                 // Implement InsertOneAsync() to insert a
                 // new comment into the comments collection.
+                await _commentsCollection.InsertOneAsync(newComment);
 
                 return await _moviesRepository.GetMovieAsync(movieId.ToString(), cancellationToken);
             }
@@ -83,7 +84,11 @@ namespace M220N.Repositories
             // // new UpdateOptions { ... } ,
             // // cancellationToken);
 
-            return null;
+            return await _commentsCollection.UpdateOneAsync(
+              Builders<Comment>.Filter.Where(c => c.MovieId == movieId && c.Email == user.Email),
+              Builders<Comment>.Update.Set(c => c.Text, comment),
+              new UpdateOptions(),
+              cancellationToken);
         }
 
         /// <summary>
@@ -104,7 +109,7 @@ namespace M220N.Repositories
             _commentsCollection.DeleteOne(
                 Builders<Comment>.Filter.Where(
                     c => c.MovieId == movieId
-                         && c.Id == commentId));
+                         && c.Id == commentId &&c.Email== user.Email));
 
             return await _moviesRepository.GetMovieAsync(movieId.ToString(), cancellationToken);
         }
@@ -122,7 +127,7 @@ namespace M220N.Repositories
             */
             try
             {
-                List<ReportProjection> result = null;
+                List<ReportProjection> result = new List<ReportProjection>();
                 // TODO Ticket: User Report
                 // Return the 20 users who have commented the most on MFlix. You will need to use
                 // the Group, Sort, Limit, and Project methods of the Aggregation pipeline.
@@ -133,7 +138,30 @@ namespace M220N.Repositories
                 // //   .Group(...)
                 // //   .Sort(...).Limt(...).Project(...).ToListAsync()
 
-                return new TopCommentsProjection(result);
+                var group = new BsonDocument { { "$sortByCount", "$email" } };
+                var limit = new BsonDocument("$limit", 20); ;
+
+                var pipeline = new[]
+                {
+                    group,
+                    limit
+                };
+
+                var project = Builders<Comment>.Projection.Include(m => m.Name).Include(m => m.Id);
+
+                var res = await _commentsCollection
+                .WithReadConcern(new ReadConcern(ReadConcernLevel.Majority))
+                .Aggregate(PipelineDefinition<Comment, ReportProjection>.Create(pipeline))
+                .ToListAsync();
+
+                for (int i = 0; i < res.Count; i++)
+                {
+                    result.Add(res[i]);
+                }
+    
+                var top = new TopCommentsProjection(result);
+
+                return top;
             }
             catch (Exception ex)
             {
